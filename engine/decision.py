@@ -30,13 +30,19 @@ class DecisionEngine:
         price = self.data_provider.get_current_price(symbol)
         positions = self.broker.get_positions()
         
-        # 1. Chequeo de Emergencia: Stop-Loss
+        # 1. Chequeo de Emergencia: Stop-Loss y Take-Profit
         if symbol in positions and positions[symbol] > 0:
             if self.risk_manager.should_stop_loss(symbol, price):
-                logger.info(f"{symbol}: Stop-Loss Triggered! Selling position.")
+                logger.info(f"{symbol}: 🛑 Stop-Loss Triggered! Selling position.")
                 self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, positions[symbol])
                 self.risk_manager.clear_entry(symbol)
                 return  # Si vendemos por stop-loss, no evaluamos nuevas entradas
+
+            if self.risk_manager.should_take_profit(symbol, price):
+                logger.info(f"{symbol}: ✅ Take-Profit Triggered! Locking in gains.")
+                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, positions[symbol])
+                self.risk_manager.clear_entry(symbol)
+                return  # Ganancia asegurada, no evaluamos nuevas entradas en este ciclo
 
         # 2. Evaluación de estrategia normal
         signal: SignalType = self.signal_engine.evaluate(symbol, self.data_provider)

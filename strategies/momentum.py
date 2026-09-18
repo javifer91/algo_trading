@@ -50,10 +50,11 @@ class MultiIndicatorStrategy(Strategy):
 
     def generate_signal(self, symbol: str, data_provider: MarketDataProvider) -> SignalType:
         end_time = datetime.now()
-        start_time = end_time - pd.Timedelta(days=200)
+        # Yahoo Finance: máximo 7 días para datos de 1 minuto
+        start_time = end_time - pd.Timedelta(days=5)
 
         try:
-            df = data_provider.get_historical_data(symbol, start_time, end_time, "1d")
+            df = data_provider.get_historical_data(symbol, start_time, end_time, "1m")
         except Exception as e:
             return SignalType(
                 symbol=symbol, signal=0, confidence=0.0,
@@ -89,11 +90,14 @@ class MultiIndicatorStrategy(Strategy):
             vol_ratio = current_vol / vol_avg if vol_avg > 0 else 1.0
             vol_confirmed = vol_ratio > 1.0
 
-        # --- Retorno esperado REAL (media de retornos positivos de últimos 30 días) ---
-        daily_returns = prices.pct_change().dropna()
-        positive_returns = daily_returns[daily_returns > 0].tail(30)
-        expected_return = float(positive_returns.mean()) if len(positive_returns) > 0 else 0.005
-        volatility = float(daily_returns.std())
+        # --- Retorno esperado REAL escalado a horizonte de 60 minutos ---
+        # Con velas de 1 minuto, el retorno por vela es muy pequeño.
+        # Proyectamos a 60 minutos para que el filtro de viabilidad sea realista.
+        minute_returns = prices.pct_change().dropna()
+        positive_returns = minute_returns[minute_returns > 0].tail(60)
+        expected_return_per_min = float(positive_returns.mean()) if len(positive_returns) > 0 else 0.0001
+        expected_return = expected_return_per_min * 60  # proyección a ~1h de holding
+        volatility = float(minute_returns.std())
 
         # --- Confianza CONTINUA por indicador (ponderada) ---
         # RSI: cuanto más alejado del centro (50), más convicción.

@@ -284,6 +284,19 @@ if st.session_state.get("last_signal"):
         if target_inv > 0:
             st.write(f"**Inversión objetivo:** {target_inv:.4f} {settings.base_currency}")
 
+        # Mostrar niveles de Stop-Loss / Take-Profit para la posición abierta
+        risk_mgr = st.session_state.risk
+        positions_now = st.session_state.broker.get_positions()
+        if SYMBOL in positions_now and SYMBOL in risk_mgr.entry_prices:
+            entry_p = risk_mgr.entry_prices[SYMBOL]
+            sl_level = entry_p * (1 - risk_mgr.stop_loss_pct)
+            tp_level = entry_p * (1 + risk_mgr.take_profit_pct)
+            st.markdown("---")
+            st.write(f"**Precio entrada:** ${entry_p:.4f}")
+            st.write(f"**🛑 Stop-Loss:** ${sl_level:.4f} (-{risk_mgr.stop_loss_pct*100:.0f}%)")
+            st.write(f"**✅ Take-Profit:** ${tp_level:.4f} (+{risk_mgr.take_profit_pct*100:.0f}%)")
+
+
     # --- Barras de intensidad por indicador ---
     st.markdown("#### Intensidad de cada indicador (ciclo actual)")
     icol1, icol2, icol3 = st.columns(3)

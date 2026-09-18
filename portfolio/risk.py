@@ -22,6 +22,7 @@ class RiskManager:
 
         # Parámetros de riesgo (desde settings)
         self.stop_loss_pct: float = 0.03           # Stop-loss por posición: -3%
+        self.take_profit_pct: float = 0.02         # Take-profit por posición: +2%
         self.max_drawdown_pct: float = settings.max_drawdown_percent       # -25% desde el pico
         self.max_daily_loss_pct: float = settings.max_daily_loss_percent   # -5% en el día
 
@@ -105,6 +106,23 @@ class RiskManager:
             logger.warning(
                 f"Stop-loss activado en {symbol}: entrada={entry:.4f}, "
                 f"actual={current_price:.4f}, pérdida={loss_pct*100:.1f}%"
+            )
+            return True
+        return False
+
+    def should_take_profit(self, symbol: str, current_price: float) -> bool:
+        """
+        Comprueba si una posición ha alcanzado el nivel de take-profit.
+        Returns True si la ganancia supera self.take_profit_pct (2%).
+        """
+        if symbol not in self.entry_prices:
+            return False
+        entry = self.entry_prices[symbol]
+        gain_pct = (current_price - entry) / entry
+        if gain_pct >= self.take_profit_pct:
+            logger.info(
+                f"Take-profit activado en {symbol}: entrada={entry:.4f}, "
+                f"actual={current_price:.4f}, ganancia={gain_pct*100:.1f}% ✅"
             )
             return True
         return False
