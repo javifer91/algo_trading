@@ -201,13 +201,13 @@ class MultiIndicatorStrategy(Strategy):
         # En modo intenso requerimos menos confirmación (1/3 o 2/3) para disparar rápido
         required_signals = 1 if self.is_intense_mode else 2
 
-        if buy_signals >= required_signals:
+        if buy_signals >= required_signals and buy_signals > sell_signals:
             result = SignalType(
                 symbol=symbol, signal=1, confidence=confidence,
                 expected_return=expected_return, expected_risk=volatility,
                 reason=f"COMPRA ({buy_signals}/3): {reason_str}"
             )
-        elif sell_signals >= required_signals:
+        elif sell_signals >= required_signals and sell_signals > buy_signals:
             result = SignalType(
                 symbol=symbol, signal=-1, confidence=confidence,
                 expected_return=expected_return, expected_risk=volatility,
