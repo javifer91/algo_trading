@@ -70,10 +70,20 @@ class PaperBroker(BrokerInterface):
         
         try:
             bid, ask = self.data_provider.get_bid_ask(symbol)
+            if bid <= 0 or ask <= 0:
+                raise ValueError("bid/ask invalid")
         except Exception as e:
-            self.orders[order_id]["status"] = OrderStatus.REJECTED
-            logger.error(f"Order {order_id} rejected due to data error: {e}")
-            return
+            # Fuera de horario o datos no disponibles: estimar spread del 0.05%
+            try:
+                price = self.data_provider.get_current_price(symbol)
+            except Exception:
+                self.orders[order_id]["status"] = OrderStatus.REJECTED
+                logger.error(f"Order {order_id} rejected: no price available")
+                return
+            spread = price * 0.0005
+            bid = price - spread / 2
+            ask = price + spread / 2
+            logger.warning(f"Bid/Ask no disponible para {symbol}, usando estimación: bid={bid:.4f} ask={ask:.4f}")
 
         if side == OrderSide.BUY:
             # You buy at the ask price + slippage

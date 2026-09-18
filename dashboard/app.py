@@ -19,6 +19,9 @@ from engine.decision import DecisionEngine
 st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", page_icon="📈")
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
+# Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
+APP_VERSION = "v6"
+
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
 selected_option = st.sidebar.radio(
@@ -37,9 +40,14 @@ SYMBOL_MAP = {
 }
 SYMBOL = SYMBOL_MAP[selected_option]
 
-# Reiniciar estado si se cambia de activo
-if "current_symbol" not in st.session_state or st.session_state.current_symbol != SYMBOL:
+# Reiniciar estado si se cambia de activo O si la versión de la app ha cambiado
+if (
+    "current_symbol" not in st.session_state
+    or st.session_state.current_symbol != SYMBOL
+    or st.session_state.get("app_version") != APP_VERSION
+):
     st.session_state.current_symbol = SYMBOL
+    st.session_state.app_version = APP_VERSION
     st.session_state.engine_initialized = False
     st.session_state.is_running = False
 
@@ -64,8 +72,14 @@ if not st.session_state.get("engine_initialized", False):
         return st.session_state.real_history
     st.session_state.data_provider.get_historical_data = cached_historical
     
-    # 2. Configurar Broker, Riesgo, Filtros
-    st.session_state.broker = PaperBroker(settings.initial_capital, st.session_state.data_provider)
+    # 2. Configurar Broker (sin comisiones para paper trading micro-capital)
+    st.session_state.broker = PaperBroker(
+        settings.initial_capital,
+        st.session_state.data_provider,
+        commission_pct=0.001,  # 0.1% por operación (realista para cripto)
+        min_commission=0.0,    # Sin mínimo para micro-capital
+        slippage_pct=0.0005
+    )
     
     # Estrategia Multi-Indicador (RSI, MACD, Vol)
     multi_strategy = MultiIndicatorStrategy()
@@ -105,11 +119,16 @@ if st.session_state.is_running:
         # 1. Obtener precio real actual
         current_price = st.session_state.data_provider.get_current_price(SYMBOL)
         
-        # Actualizar histórico en memoria
+        # Actualizar histórico en memoria: añadir nueva vela con el precio actual
+        # y recortar para no crecer indefinidamente
         df_hist = st.session_state.real_history
-        new_date = datetime.now()
-        new_row = pd.DataFrame({'close': [current_price]}, index=[new_date])
-        st.session_state.real_history = pd.concat([df_hist, new_row])
+        new_date = pd.Timestamp.now()
+        new_row = pd.DataFrame(
+            {'open': [current_price], 'high': [current_price], 'low': [current_price],
+             'close': [current_price], 'volume': [0]},
+            index=[new_date]
+        )
+        st.session_state.real_history = pd.concat([df_hist, new_row]).tail(3000)
         
         # 2. Evaluar señal directamente para mostrar diagnóstico
         raw_signal = st.session_state.strategy.evaluate(SYMBOL, st.session_state.data_provider)
@@ -145,13 +164,14 @@ if st.session_state.is_running:
             "Valor": portfolio_value
         })
         # Guardar historial de confianza (últimos 200 ticks)
+        extra_dict = getattr(raw_signal, "extra", {})
         st.session_state.confidence_history.append({
             "Fecha": datetime.now(),
             "Confianza %": round(raw_signal.confidence * 100, 1),
             "Señal": {1: "COMPRA", -1: "VENTA", 0: "HOLD"}.get(raw_signal.signal, "?"),
-            "RSI Score %": round(raw_signal.extra.get("rsi_score", 0), 1),
-            "MACD Score %": round(raw_signal.extra.get("macd_score", 0), 1),
-            "Vol Score %": round(raw_signal.extra.get("vol_score", 0), 1),
+            "RSI Score %": round(extra_dict.get("rsi_score", 0), 1),
+            "MACD Score %": round(extra_dict.get("macd_score", 0), 1),
+            "Vol Score %": round(extra_dict.get("vol_score", 0), 1),
         })
         if len(st.session_state.confidence_history) > 200:
             st.session_state.confidence_history = st.session_state.confidence_history[-200:]
@@ -300,11 +320,12 @@ if st.session_state.get("last_signal"):
     # --- Barras de intensidad por indicador ---
     st.markdown("#### Intensidad de cada indicador (ciclo actual)")
     icol1, icol2, icol3 = st.columns(3)
-    rsi_score = sig.extra.get("rsi_score", None)
-    macd_score = sig.extra.get("macd_score", None)
-    vol_score = sig.extra.get("vol_score", None)
-    rsi_val = sig.extra.get("rsi_val", None)
-    vol_ratio = sig.extra.get("vol_ratio", None)
+    sig_extra = getattr(sig, "extra", {})
+    rsi_score = sig_extra.get("rsi_score", None)
+    macd_score = sig_extra.get("macd_score", None)
+    vol_score = sig_extra.get("vol_score", None)
+    rsi_val = sig_extra.get("rsi_val", None)
+    vol_ratio = sig_extra.get("vol_ratio", None)
 
     with icol1:
         st.markdown("**RSI (peso 40%)**")
@@ -315,8 +336,8 @@ if st.session_state.get("last_signal"):
 
     with icol2:
         st.markdown("**MACD (peso 35%)**")
-        macd_v = sig.extra.get("macd_val", None)
-        sig_v = sig.extra.get("signal_val", None)
+        macd_v = sig_extra.get("macd_val", None)
+        sig_v = sig_extra.get("signal_val", None)
         if macd_v is not None and sig_v is not None:
             st.caption(f"MACD: {macd_v:.4f} | Señal: {sig_v:.4f}")
         if macd_score is not None:

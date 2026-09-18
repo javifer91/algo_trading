@@ -14,8 +14,8 @@ class MultiIndicatorStrategy(Strategy):
     def __init__(
         self,
         rsi_period: int = 14,
-        rsi_buy_threshold: float = 60.0,  # Más permisivo (antes 45)
-        rsi_sell_threshold: float = 40.0, # Más permisivo (antes 55)
+        rsi_buy_threshold: float = 45.0,   # RSI < 45 = sobreventa = COMPRA
+        rsi_sell_threshold: float = 55.0,  # RSI > 55 = sobrecompra = VENTA
         macd_fast: int = 12,
         macd_slow: int = 26,
         macd_signal_period: int = 9,
@@ -81,12 +81,13 @@ class MultiIndicatorStrategy(Strategy):
         # --- MACD ---
         macd_val, signal_val, macd_cross_up, macd_cross_down = self._calculate_macd(prices)
 
-        # --- Volumen ---
+        # --- Volúmen ---
+        # Usamos el penúltimo tick porque Yahoo Finance devuelve el último minuto con vol=0
         vol_confirmed = False
         vol_ratio = 1.0
-        if not volumes.empty and len(volumes) >= self.volume_period:
-            vol_avg = volumes.rolling(window=self.volume_period).mean().iloc[-1]
-            current_vol = volumes.iloc[-1]
+        if not volumes.empty and len(volumes) >= self.volume_period + 1:
+            vol_avg = volumes.rolling(window=self.volume_period).mean().iloc[-2]
+            current_vol = volumes.iloc[-2]  # penúltimo: ya consolidado
             vol_ratio = current_vol / vol_avg if vol_avg > 0 else 1.0
             vol_confirmed = vol_ratio > 1.0
 
