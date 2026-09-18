@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v17"
+APP_VERSION = "v18"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
@@ -293,66 +293,51 @@ if broker.orders:
             "balance": running_balance if lado_raw == "sell" else None
         })
     
-    # Renderizar tabla HTML con colores
-    table_rows = ""
-    for row in reversed(orders_list):
+    # Renderizar tabla con pandas Styler (compatible con Streamlit Cloud)
+    orders_display = []
+    for row in orders_list:
         net_pnl = row["net_pnl"]
         balance = row["balance"]
-        
-        if net_pnl is not None:
-            if net_pnl > 0:
-                pnl_html = f'<td style="color:#00c853;font-weight:bold">+{net_pnl:.4f}€ ✅</td>'
-            else:
-                pnl_html = f'<td style="color:#ff1744;font-weight:bold">{net_pnl:.4f}€ 🛑</td>'
-        else:
-            pnl_html = '<td style="color:#888">-</td>'
-        
-        if balance is not None:
-            if balance >= settings.initial_capital:
-                bal_html = f'<td style="color:#00c853;font-weight:bold">{balance:.2f}€</td>'
-            else:
-                bal_html = f'<td style="color:#ff1744;font-weight:bold">{balance:.2f}€</td>'
-        else:
-            bal_html = '<td style="color:#888">-</td>'
-        
-        if row["lado"] == "COMPRA":
-            lado_html = f'<td style="color:#42a5f5;font-weight:bold">📈 {row["lado"]}</td>'
-        else:
-            lado_html = f'<td style="color:#ef5350;font-weight:bold">📉 {row["lado"]}</td>'
-        
-        table_rows += f"""
-        <tr>
-            <td style="font-family:monospace;font-size:0.85em;color:#aaa">{row['id']}</td>
-            <td style="font-weight:bold">{row['symbol']}</td>
-            {lado_html}
-            <td>{row['motivo']}</td>
-            <td style="color:#aaa">{row['estado']}</td>
-            <td style="font-family:monospace">{row['cantidad']}</td>
-            <td style="font-family:monospace">{row['precio']}</td>
-            <td style="color:#ff9800">{row['comision']}</td>
-            {pnl_html}
-            {bal_html}
-        </tr>"""
-    
-    st.markdown(f"""
-    <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:0.9em">
-        <thead>
-            <tr style="border-bottom:2px solid #444;text-align:left">
-                <th>ID</th><th>S&iacute;mbolo</th><th>Lado</th><th>Motivo</th>
-                <th>Estado</th><th>Cantidad</th><th>Precio Ejec.</th>
-                <th>Comisi&oacute;n</th><th>Beneficio Neto</th><th>Balance Acum.</th>
-            </tr>
-        </thead>
-        <tbody>
-        {table_rows}
-        </tbody>
-    </table>
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.info("Aún no hay operaciones. Revisa el diagnóstico de abajo para ver qué está evaluando el bot.")
+        lado = row["lado"]
+        orders_display.append({
+            "ID": row["id"],
+            "S\u00edmbolo": row["symbol"],
+            "Lado": f"\U0001f4c8 {lado}" if lado == "COMPRA" else f"\U0001f4c9 {lado}",
+            "Motivo": row["motivo"],
+            "Estado": row["estado"],
+            "Cantidad": row["cantidad"],
+            "Precio Ejec.": row["precio"],
+            "Comisi\u00f3n": row["comision"],
+            "Beneficio Neto": (f"+{net_pnl:.4f}\u20ac \u2705" if net_pnl > 0 else f"{net_pnl:.4f}\u20ac \U0001f6d1") if net_pnl is not None else "-",
+            "Balance Acum.": f"{balance:.2f}\u20ac" if balance is not None else "-",
+            "_pnl": net_pnl if net_pnl is not None else float("nan"),
+            "_bal": balance if balance is not None else float("nan"),
+        })
 
+    df_orders = pd.DataFrame(orders_display).iloc[::-1].reset_index(drop=True)
+
+    def _color_row(row):
+        import math
+        styles = [""] * len(row)
+        cols = list(row.index)
+        pnl = row.get("_pnl", float("nan"))
+        bal = row.get("_bal", float("nan"))
+        lado_val = str(row.get("Lado", ""))
+        if "COMPRA" in lado_val and "Lado" in cols:
+            styles[cols.index("Lado")] = "color: #42a5f5; font-weight: bold"
+        elif "VENTA" in lado_val and "Lado" in cols:
+            styles[cols.index("Lado")] = "color: #ef5350; font-weight: bold"
+        if "Beneficio Neto" in cols and not math.isnan(pnl):
+            styles[cols.index("Beneficio Neto")] = "color: #00c853; font-weight: bold" if pnl > 0 else "color: #ff1744; font-weight: bold"
+        if "Balance Acum." in cols and not math.isnan(bal):
+            styles[cols.index("Balance Acum.")] = "color: #00c853; font-weight: bold" if bal >= settings.initial_capital else "color: #ff1744; font-weight: bold"
+        return styles
+
+    df_display = df_orders.drop(columns=["_pnl", "_bal"])
+    styled = df_display.style.apply(_color_row, axis=1)
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+else:
+    st.info("A\u00fan no hay operaciones. Revisa el diagn\u00f3stico de abajo para ver qu\u00e9 est\u00e1 evaluando el bot.")
 # --- EXPLICACIÓN DE CÁLCULO DE CONFIANZA ---
 st.markdown("---")
 st.subheader("📐 ¿Cómo se calcula la Confianza del Algoritmo?")
