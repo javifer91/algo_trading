@@ -149,9 +149,9 @@ if st.session_state.is_running:
             "Fecha": datetime.now(),
             "Confianza %": round(raw_signal.confidence * 100, 1),
             "Señal": {1: "COMPRA", -1: "VENTA", 0: "HOLD"}.get(raw_signal.signal, "?"),
-            "RSI Score %": round(getattr(raw_signal, "rsi_score", 0), 1),
-            "MACD Score %": round(getattr(raw_signal, "macd_score", 0), 1),
-            "Vol Score %": round(getattr(raw_signal, "vol_score", 0), 1),
+            "RSI Score %": round(raw_signal.extra.get("rsi_score", 0), 1),
+            "MACD Score %": round(raw_signal.extra.get("macd_score", 0), 1),
+            "Vol Score %": round(raw_signal.extra.get("vol_score", 0), 1),
         })
         if len(st.session_state.confidence_history) > 200:
             st.session_state.confidence_history = st.session_state.confidence_history[-200:]
@@ -300,11 +300,11 @@ if st.session_state.get("last_signal"):
     # --- Barras de intensidad por indicador ---
     st.markdown("#### Intensidad de cada indicador (ciclo actual)")
     icol1, icol2, icol3 = st.columns(3)
-    rsi_score = getattr(sig, "rsi_score", None)
-    macd_score = getattr(sig, "macd_score", None)
-    vol_score = getattr(sig, "vol_score", None)
-    rsi_val = getattr(sig, "rsi_val", None)
-    vol_ratio = getattr(sig, "vol_ratio", None)
+    rsi_score = sig.extra.get("rsi_score", None)
+    macd_score = sig.extra.get("macd_score", None)
+    vol_score = sig.extra.get("vol_score", None)
+    rsi_val = sig.extra.get("rsi_val", None)
+    vol_ratio = sig.extra.get("vol_ratio", None)
 
     with icol1:
         st.markdown("**RSI (peso 40%)**")
@@ -315,8 +315,8 @@ if st.session_state.get("last_signal"):
 
     with icol2:
         st.markdown("**MACD (peso 35%)**")
-        macd_v = getattr(sig, "macd_val", None)
-        sig_v = getattr(sig, "signal_val", None)
+        macd_v = sig.extra.get("macd_val", None)
+        sig_v = sig.extra.get("signal_val", None)
         if macd_v is not None and sig_v is not None:
             st.caption(f"MACD: {macd_v:.4f} | Señal: {sig_v:.4f}")
         if macd_score is not None:

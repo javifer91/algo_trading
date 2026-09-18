@@ -194,5 +194,5 @@ class MultiIndicatorStrategy(Strategy):
             )
 
         # Adjuntar scores extra al objeto señal para el diagnóstico
-        result.__dict__.update(extra)
+        result.extra = extra
         return result

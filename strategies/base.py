@@ -9,6 +9,7 @@ class SignalType(BaseModel):
     expected_return: float # e.g., 0.02 for 2%
     expected_risk: float   # e.g., 0.01 for 1%
     reason: str
+    extra: Dict[str, Any] = {}
 
 class Strategy(ABC):
     def __init__(self, name: str):
@@ -44,11 +45,16 @@ class SignalEngine:
             
         reasons = " | ".join([f"{s.reason}" for s in signals if s.signal != 0])
         
+        merged_extra = {}
+        for s in signals:
+            merged_extra.update(s.extra)
+        
         return SignalType(
             symbol=symbol,
             signal=final_signal,
             confidence=avg_conf,
             expected_return=avg_ret,
             expected_risk=avg_risk,
-            reason=reasons if reasons else "No clear consensus"
+            reason=reasons if reasons else "No clear consensus",
+            extra=merged_extra
         )
