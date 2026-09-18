@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v15"
+APP_VERSION = "v16"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
@@ -166,16 +166,20 @@ if st.session_state.is_running:
         # 3. Ejecutar el motor
         st.session_state.engine.evaluate_and_execute(SYMBOL)
         
-        # 4. Registrar valor del portafolio y confianza
-        cash = st.session_state.broker.get_balance()
-        positions = st.session_state.broker.get_positions()
-        portfolio_value = cash
-        for sym, qty in positions.items():
-            portfolio_value += qty * current_price
+        # 4. Registrar valor REAL del portafolio (margen + PnL no realizado)
+        cash_now = st.session_state.broker.get_balance()
+        positions_now = st.session_state.broker.get_positions()
+        portfolio_value_tick = cash_now
+        for sym, qty in positions_now.items():
+            if qty > 0:
+                avg_e = st.session_state.broker.avg_entry.get(sym, current_price)
+                unrealized = (current_price - avg_e) * qty
+                margin_held = st.session_state.broker.margins.get(sym, 0.0)
+                portfolio_value_tick += margin_held + unrealized
             
         st.session_state.portfolio_history.append({
             "Fecha": datetime.now(),
-            "Valor": portfolio_value
+            "Valor": portfolio_value_tick
         })
         # Guardar historial de confianza (últimos 200 ticks)
         extra_dict = getattr(raw_signal, "extra", {})
@@ -255,25 +259,89 @@ st.subheader("Órdenes y Operaciones")
 if broker.orders:
     LADO_ES = {"buy": "COMPRA", "sell": "VENTA"}
     ESTADO_ES = {"pending": "PENDIENTE", "submitted": "ENVIADA", "filled": "EJECUTADA", "rejected": "RECHAZADA", "cancelled": "CANCELADA"}
+    
+    # Reconstruir historial de saldo acumulado operación a operación
+    running_balance = settings.initial_capital
     orders_list = []
     for oid, details in broker.orders.items():
         lado_raw = details["side"].value.lower()
         estado_raw = details["status"].value.lower()
         net_pnl = details.get("net_pnl", None)
-        pnl_str = f"{net_pnl:+.4f}" if net_pnl is not None else "-"
+        
+        # Actualizar saldo acumulado
+        if lado_raw == "sell" and estado_raw == "filled" and net_pnl is not None:
+            running_balance += net_pnl
         
         orders_list.append({
-            "ID": oid[:8],
-            "Símbolo": details["symbol"],
-            "Lado": LADO_ES.get(lado_raw, lado_raw.upper()),
-            "Motivo": details.get("reason", "-"),
-            "Estado": ESTADO_ES.get(estado_raw, estado_raw.upper()),
-            "Cantidad": details["quantity"],
-            "Precio Ejec.": details.get("execution_price", "-"),
-            "Comisión": details.get("commission", "-"),
-            "Beneficio Neto": pnl_str
+            "id": oid[:8],
+            "symbol": details["symbol"],
+            "lado": LADO_ES.get(lado_raw, lado_raw.upper()),
+            "motivo": details.get("reason", "-"),
+            "estado": ESTADO_ES.get(estado_raw, estado_raw.upper()),
+            "cantidad": f"{details['quantity']:.6f}",
+            "precio": f"${details.get('execution_price', 0):.4f}" if details.get('execution_price') else "-",
+            "comision": f"{details.get('commission', 0):.4f}€" if details.get('commission') is not None else "-",
+            "net_pnl": net_pnl,
+            "balance": running_balance if lado_raw == "sell" else None
         })
-    st.dataframe(pd.DataFrame(orders_list).iloc[::-1], use_container_width=True)
+    
+    # Renderizar tabla HTML con colores
+    table_rows = ""
+    for row in reversed(orders_list):
+        net_pnl = row["net_pnl"]
+        balance = row["balance"]
+        
+        if net_pnl is not None:
+            if net_pnl > 0:
+                pnl_html = f'<td style="color:#00c853;font-weight:bold">+{net_pnl:.4f}€ ✅</td>'
+            else:
+                pnl_html = f'<td style="color:#ff1744;font-weight:bold">{net_pnl:.4f}€ 🛑</td>'
+        else:
+            pnl_html = '<td style="color:#888">-</td>'
+        
+        if balance is not None:
+            if balance >= settings.initial_capital:
+                bal_html = f'<td style="color:#00c853;font-weight:bold">{balance:.2f}€</td>'
+            else:
+                bal_html = f'<td style="color:#ff1744;font-weight:bold">{balance:.2f}€</td>'
+        else:
+            bal_html = '<td style="color:#888">-</td>'
+        
+        if row["lado"] == "COMPRA":
+            lado_html = f'<td style="color:#42a5f5;font-weight:bold">📈 {row["lado"]}</td>'
+        else:
+            lado_html = f'<td style="color:#ef5350;font-weight:bold">📉 {row["lado"]}</td>'
+        
+        table_rows += f"""
+        <tr>
+            <td style="font-family:monospace;font-size:0.85em;color:#aaa">{row['id']}</td>
+            <td style="font-weight:bold">{row['symbol']}</td>
+            {lado_html}
+            <td>{row['motivo']}</td>
+            <td style="color:#aaa">{row['estado']}</td>
+            <td style="font-family:monospace">{row['cantidad']}</td>
+            <td style="font-family:monospace">{row['precio']}</td>
+            <td style="color:#ff9800">{row['comision']}</td>
+            {pnl_html}
+            {bal_html}
+        </tr>"""
+    
+    st.markdown(f"""
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:0.9em">
+        <thead>
+            <tr style="border-bottom:2px solid #444;text-align:left">
+                <th>ID</th><th>S&iacute;mbolo</th><th>Lado</th><th>Motivo</th>
+                <th>Estado</th><th>Cantidad</th><th>Precio Ejec.</th>
+                <th>Comisi&oacute;n</th><th>Beneficio Neto</th><th>Balance Acum.</th>
+            </tr>
+        </thead>
+        <tbody>
+        {table_rows}
+        </tbody>
+    </table>
+    </div>
+    """, unsafe_allow_html=True)
 else:
     st.info("Aún no hay operaciones. Revisa el diagnóstico de abajo para ver qué está evaluando el bot.")
 
