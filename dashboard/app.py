@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v16"
+APP_VERSION = "v17"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
@@ -253,7 +253,12 @@ col_comm.metric("Comisiones Pagadas", f"{total_commissions:.2f} {settings.base_c
 st.subheader("Curva de Capital del Portafolio")
 if len(st.session_state.portfolio_history) > 0:
     df_chart = pd.DataFrame(st.session_state.portfolio_history).set_index("Fecha")
-    st.line_chart(df_chart)
+    df_chart.columns = ["Capital (EUR)"]
+    # Solo mostrar si hay más de 1 punto distinto para evitar gráfica plana
+    if df_chart["Capital (EUR)"].nunique() > 1:
+        st.line_chart(df_chart)
+    else:
+        st.caption("La curva de capital aparecerá cuando haya movimientos en el portafolio.")
 
 st.subheader("Órdenes y Operaciones")
 if broker.orders:
@@ -268,9 +273,12 @@ if broker.orders:
         estado_raw = details["status"].value.lower()
         net_pnl = details.get("net_pnl", None)
         
-        # Actualizar saldo acumulado
-        if lado_raw == "sell" and estado_raw == "filled" and net_pnl is not None:
-            running_balance += net_pnl
+        # Actualizar saldo acumulado (comisión de compra + PnL neto de venta)
+        if estado_raw == "filled":
+            if lado_raw == "buy":
+                running_balance -= (details.get("commission", 0.0) or 0.0)
+            elif lado_raw == "sell" and net_pnl is not None:
+                running_balance += net_pnl
         
         orders_list.append({
             "id": oid[:8],

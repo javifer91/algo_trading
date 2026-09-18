@@ -124,7 +124,7 @@ class PaperBroker(BrokerInterface):
             commission = self._calculate_commission(trade_value)
             
             current_qty = self.positions.get(symbol, 0.0)
-            if current_qty < quantity:
+            if current_qty < quantity - 1e-9:  # Tolerancia para errores de punto flotante
                 self.orders[order_id]["status"] = OrderStatus.REJECTED
                 logger.error(f"Order {order_id} rejected: Insufficient position. Need {quantity}, have {current_qty}")
                 return
