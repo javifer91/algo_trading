@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.config import settings
 from broker.paper import PaperBroker
 from data.yfinance_provider import YFinanceDataProvider
+from strategies.base import SignalEngine
 from strategies.momentum import SimpleMomentumStrategy
 from portfolio.risk import RiskManager
 from engine.filter import TradeViabilityFilter
@@ -45,7 +46,8 @@ if "engine_initialized" not in st.session_state:
     st.session_state.broker = PaperBroker(settings.initial_capital, st.session_state.data_provider)
     
     # Usaremos ventanas cortas para que sea más sensible
-    st.session_state.strategy = SimpleMomentumStrategy(short_window=3, long_window=10)
+    momentum = SimpleMomentumStrategy(short_window=3, long_window=10)
+    st.session_state.strategy = SignalEngine([momentum])  # DecisionEngine requiere un SignalEngine
     st.session_state.risk = RiskManager(st.session_state.broker)
     
     # Comisiones en 0 para que cualquier mínima ganancia esperada pase el filtro y veamos acción
