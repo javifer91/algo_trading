@@ -1,0 +1,28 @@
+[project]
+name = "algotrading"
+version = "0.1.0"
+description = "Algorithmic trading engine for micro-capital"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9.2",
+    "pydantic-settings>=2.5.2",
+    "pandas>=2.2.2",
+    "numpy>=2.0.1",
+    "sqlalchemy>=2.0.35",
+    "scikit-learn>=1.5.1",
+    "streamlit>=1.38.0",
+    "plotly>=5.24.0",
+    "python-dotenv>=1.0.1",
+    "loguru>=0.7.2",
+    "yfinance>=0.2.43",
+    "ccxt>=4.4.15",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.6.7",
+    "mypy>=1.11.2",
+]

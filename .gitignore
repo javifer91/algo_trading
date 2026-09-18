@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.db
+*.sqlite
+.DS_Store
+data/algotrading.db
+.agents/
