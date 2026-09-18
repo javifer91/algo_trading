@@ -41,23 +41,15 @@ class YFinanceDataProvider(MarketDataProvider):
 
     def get_bid_ask(self, symbol: str) -> tuple[float, float]:
         """
-        yfinance doesn't reliably provide real-time bid/ask for all symbols.
-        We will simulate a realistic bid/ask spread based on the current price 
-        and typical liquidity (e.g. 0.05% spread).
+        yfinance doesn't reliably provide real-time bid/ask for all symbols,
+        and ticker.info is heavily cached. We will simulate a realistic bid/ask 
+        spread based on the current price and typical liquidity (e.g. 0.05% spread).
         """
         try:
-            ticker = self._get_ticker(symbol)
-            info = ticker.info
-            bid = info.get("bid", 0.0)
-            ask = info.get("ask", 0.0)
-            
-            # If bid/ask are missing or zero (common in yfinance during off-hours), estimate it
-            if not bid or not ask or bid == 0 or ask == 0:
-                price = self.get_current_price(symbol)
-                spread = price * 0.0005 # 0.05% simulated spread
-                bid = price - (spread / 2)
-                ask = price + (spread / 2)
-                
+            price = self.get_current_price(symbol)
+            spread = price * 0.0005 # 0.05% simulated spread
+            bid = price - (spread / 2)
+            ask = price + (spread / 2)
             return bid, ask
         except Exception as e:
             logger.error(f"Error fetching bid/ask for {symbol}: {e}")
