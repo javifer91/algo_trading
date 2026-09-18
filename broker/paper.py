@@ -153,6 +153,9 @@ class PaperBroker(BrokerInterface):
         self.orders[order_id]["status"] = OrderStatus.FILLED
         self.orders[order_id]["execution_price"] = execution_price
         self.orders[order_id]["commission"] = commission
+        if side == OrderSide.SELL:
+            self.orders[order_id]["pnl"] = pnl
+            self.orders[order_id]["net_pnl"] = pnl - commission
         
         logger.info(f"Order {order_id} FILLED: {side.value.upper()} {quantity} {symbol} @ {execution_price:.2f}. Comm: {commission:.2f}")
 

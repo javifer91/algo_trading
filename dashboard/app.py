@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v14"
+APP_VERSION = "v15"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
@@ -217,6 +217,12 @@ for sym, qty in positions.items():
 net_profit = portfolio_value - settings.initial_capital
 total_trades = len(broker.orders)
 
+# Calcular Win Rate y Comisiones Totales
+total_commissions = sum(details.get("commission", 0.0) for details in broker.orders.values())
+sell_orders = [details for details in broker.orders.values() if details["side"].value.lower() == "sell" and details["status"].value.lower() == "filled"]
+winning_trades = sum(1 for details in sell_orders if details.get("net_pnl", 0) > 0)
+win_rate = (winning_trades / len(sell_orders)) if sell_orders else 0.0
+
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Valor del Portafolio", f"{portfolio_value:.2f} {settings.base_currency}", f"{net_profit:.2f} {settings.base_currency}")
 col2.metric(f"Precio Actual {SYMBOL}", f"${current_price:.2f}")
@@ -230,13 +236,15 @@ col3.metric("Drawdown Máximo", f"{drawdown*100:.2f}%", delta_color="inverse")
 col4.metric("P&L Diario", f"{daily_pnl*100:.2f}%")
 
 st.markdown("---")
-col_pos, col_trades = st.columns(2)
+col_pos, col_trades, col_winrate, col_comm = st.columns(4)
 if positions:
     pos_str = ", ".join([f"{qty:.4f} {sym}" for sym, qty in positions.items()])
 else:
     pos_str = "Ninguna"
 col_pos.metric("Posiciones Abiertas", pos_str)
-col_trades.metric("Operaciones Realizadas", str(total_trades))
+col_trades.metric("Órdenes Registradas", str(total_trades))
+col_winrate.metric("Tasa de Acierto (Win Rate)", f"{win_rate*100:.1f}%")
+col_comm.metric("Comisiones Pagadas", f"{total_commissions:.2f} {settings.base_currency}")
 
 st.subheader("Curva de Capital del Portafolio")
 if len(st.session_state.portfolio_history) > 0:
@@ -251,6 +259,9 @@ if broker.orders:
     for oid, details in broker.orders.items():
         lado_raw = details["side"].value.lower()
         estado_raw = details["status"].value.lower()
+        net_pnl = details.get("net_pnl", None)
+        pnl_str = f"{net_pnl:+.4f}" if net_pnl is not None else "-"
+        
         orders_list.append({
             "ID": oid[:8],
             "Símbolo": details["symbol"],
@@ -259,7 +270,8 @@ if broker.orders:
             "Estado": ESTADO_ES.get(estado_raw, estado_raw.upper()),
             "Cantidad": details["quantity"],
             "Precio Ejec.": details.get("execution_price", "-"),
-            "Comisión": details.get("commission", "-")
+            "Comisión": details.get("commission", "-"),
+            "Beneficio Neto": pnl_str
         })
     st.dataframe(pd.DataFrame(orders_list).iloc[::-1], use_container_width=True)
 else:
