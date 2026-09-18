@@ -11,8 +11,9 @@ class RiskManager:
     """
     Gestión de riesgo real: drawdown máximo, stop-loss por posición y límite de pérdida diaria.
     """
-    def __init__(self, broker: BrokerInterface):
+    def __init__(self, broker: BrokerInterface, leverage: float = 1.0):
         self.broker = broker
+        self.leverage = leverage
         self.peak_portfolio_value: float = settings.initial_capital
         self.daily_start_value: float = settings.initial_capital
         self.last_check_date: date = date.today()
@@ -147,5 +148,5 @@ class RiskManager:
             return 0.0
         balance = self.broker.get_balance()
         max_investment = balance * settings.max_position_size_percent
-        target_investment = max_investment * confidence  # confidence: 0.33 – 1.0
+        target_investment = max_investment * confidence * self.leverage
         return target_investment / price

@@ -18,16 +18,22 @@ class PaperBroker(BrokerInterface):
         data_provider: MarketDataProvider,
         commission_pct: float = 0.001,  # 0.1% commission
         min_commission: float = 1.0,    # 1.0 EUR min commission (critical for micro capital)
-        slippage_pct: float = 0.0005    # 0.05% slippage
+        slippage_pct: float = 0.0005,   # 0.05% slippage
+        leverage: float = 1.0           # Margin leverage multiplier
     ):
         self.cash = initial_capital
         self.data_provider = data_provider
         self.commission_pct = commission_pct
         self.min_commission = min_commission
         self.slippage_pct = slippage_pct
+        self.leverage = leverage
         
         # symbol -> quantity
         self.positions: Dict[str, float] = {}
+        # symbol -> margin used
+        self.margins: Dict[str, float] = {}
+        # symbol -> average entry price
+        self.avg_entry: Dict[str, float] = {}
         # order_id -> details
         self.orders: Dict[str, Dict[str, Any]] = {}
         
@@ -92,14 +98,24 @@ class PaperBroker(BrokerInterface):
             trade_value = execution_price * quantity
             commission = self._calculate_commission(trade_value)
             
-            total_cost = trade_value + commission
+            # Margin required
+            required_margin = trade_value / self.leverage
+            total_cost = required_margin + commission
+            
             if self.cash < total_cost:
                 self.orders[order_id]["status"] = OrderStatus.REJECTED
-                logger.error(f"Order {order_id} rejected: Insufficient funds. Need {total_cost:.2f}, have {self.cash:.2f}")
+                logger.error(f"Order {order_id} rejected: Insufficient margin. Need {total_cost:.2f}, have {self.cash:.2f}")
                 return
                 
             self.cash -= total_cost
-            self.positions[symbol] = self.positions.get(symbol, 0.0) + quantity
+            
+            # Update position, margin and average entry
+            current_qty = self.positions.get(symbol, 0.0)
+            current_val = current_qty * self.avg_entry.get(symbol, 0.0)
+            new_val = current_val + trade_value
+            self.positions[symbol] = current_qty + quantity
+            self.avg_entry[symbol] = new_val / self.positions[symbol]
+            self.margins[symbol] = self.margins.get(symbol, 0.0) + required_margin
             
         else: # SELL
             # You sell at the bid price - slippage
@@ -107,14 +123,32 @@ class PaperBroker(BrokerInterface):
             trade_value = execution_price * quantity
             commission = self._calculate_commission(trade_value)
             
-            current_pos = self.positions.get(symbol, 0.0)
-            if current_pos < quantity:
+            current_qty = self.positions.get(symbol, 0.0)
+            if current_qty < quantity:
                 self.orders[order_id]["status"] = OrderStatus.REJECTED
-                logger.error(f"Order {order_id} rejected: Insufficient position. Need {quantity}, have {current_pos}")
+                logger.error(f"Order {order_id} rejected: Insufficient position. Need {quantity}, have {current_qty}")
                 return
                 
-            self.cash += (trade_value - commission)
+            entry_price = self.avg_entry.get(symbol, execution_price)
+            buy_value = entry_price * quantity
+            
+            # Calculate Profit and Loss
+            pnl = trade_value - buy_value
+            
+            # Releasing margin proportionally
+            fraction_sold = quantity / current_qty
+            margin_released = self.margins.get(symbol, 0.0) * fraction_sold
+            
+            # Add back released margin + PnL - commission
+            self.cash += (margin_released + pnl - commission)
+            
             self.positions[symbol] -= quantity
+            self.margins[symbol] -= margin_released
+            
+            if self.positions[symbol] <= 1e-6:
+                self.positions[symbol] = 0.0
+                self.margins[symbol] = 0.0
+                self.avg_entry[symbol] = 0.0
             
         self.orders[order_id]["status"] = OrderStatus.FILLED
         self.orders[order_id]["execution_price"] = execution_price

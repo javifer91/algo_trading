@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v12"
+APP_VERSION = "v13"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
@@ -44,14 +44,20 @@ SYMBOL_MAP = {
 }
 SYMBOL = SYMBOL_MAP[selected_option]
 
-# Reiniciar estado si se cambia de activo O si la versión de la app ha cambiado
+st.sidebar.markdown("---")
+st.sidebar.header("Estilo de Trading")
+intense_mode = st.sidebar.toggle("🔥 Scalping Intenso (x10 Margen)", value=False, help="Aplica apalancamiento financiero x10 y relaja los indicadores para operar de forma continua y muy agresiva.")
+
+# Reiniciar estado si se cambia de activo, de modo O si la versión de la app ha cambiado
 if (
     "current_symbol" not in st.session_state
     or st.session_state.current_symbol != SYMBOL
     or st.session_state.get("app_version") != APP_VERSION
+    or st.session_state.get("intense_mode") != intense_mode
 ):
     st.session_state.current_symbol = SYMBOL
     st.session_state.app_version = APP_VERSION
+    st.session_state.intense_mode = intense_mode
     st.session_state.engine_initialized = False
     st.session_state.is_running = False
 
@@ -77,18 +83,22 @@ if not st.session_state.get("engine_initialized", False):
     st.session_state.data_provider.get_historical_data = cached_historical
     
     # 2. Configurar Broker (sin comisiones para paper trading micro-capital)
+    intense = st.session_state.get("intense_mode", False)
+    leverage_val = 10.0 if intense else 1.0
+    
     st.session_state.broker = PaperBroker(
         settings.initial_capital,
         st.session_state.data_provider,
         commission_pct=0.001,  # 0.1% por operación (realista para cripto)
         min_commission=0.0,    # Sin mínimo para micro-capital
-        slippage_pct=0.0005
+        slippage_pct=0.0005,
+        leverage=leverage_val
     )
     
     # Estrategia Multi-Indicador (RSI, MACD, Vol)
-    multi_strategy = MultiIndicatorStrategy()
+    multi_strategy = MultiIndicatorStrategy(is_intense_mode=intense)
     st.session_state.strategy = SignalEngine([multi_strategy])
-    st.session_state.risk = RiskManager(st.session_state.broker)
+    st.session_state.risk = RiskManager(st.session_state.broker, leverage=leverage_val)
     
     # Comisiones en 0 para que cualquier mínima ganancia esperada pase el filtro y veamos acción
     st.session_state.filter = TradeViabilityFilter(st.session_state.data_provider, min_commission=0.0, commission_pct=0.0)
