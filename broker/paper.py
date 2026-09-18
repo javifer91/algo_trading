@@ -40,7 +40,7 @@ class PaperBroker(BrokerInterface):
     def _calculate_commission(self, trade_value: float) -> float:
         return max(self.min_commission, trade_value * self.commission_pct)
 
-    def submit_order(self, symbol: str, side: OrderSide, type: OrderType, quantity: float, price: Optional[float] = None) -> str:
+    def submit_order(self, symbol: str, side: OrderSide, type: OrderType, quantity: float, price: Optional[float] = None, reason: str = "") -> str:
         order_id = str(uuid.uuid4())
         
         # In this simple version, Market orders execute immediately.
@@ -52,7 +52,8 @@ class PaperBroker(BrokerInterface):
             "type": type,
             "quantity": quantity,
             "price": price,
-            "status": OrderStatus.PENDING
+            "status": OrderStatus.PENDING,
+            "reason": reason
         }
         
         logger.info(f"Submitted order {order_id}: {side.value.upper()} {quantity} {symbol} @ {type.value.upper()}")

@@ -34,13 +34,13 @@ class DecisionEngine:
         if symbol in positions and positions[symbol] > 0:
             if self.risk_manager.should_stop_loss(symbol, price):
                 logger.info(f"{symbol}: 🛑 Stop-Loss Triggered! Selling position.")
-                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, positions[symbol])
+                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, positions[symbol], reason="🛑 Stop-Loss")
                 self.risk_manager.clear_entry(symbol)
                 return  # Si vendemos por stop-loss, no evaluamos nuevas entradas
 
             if self.risk_manager.should_take_profit(symbol, price):
                 logger.info(f"{symbol}: ✅ Take-Profit Triggered! Locking in gains.")
-                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, positions[symbol])
+                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, positions[symbol], reason="✅ Take-Profit")
                 self.risk_manager.clear_entry(symbol)
                 return  # Ganancia asegurada, no evaluamos nuevas entradas en este ciclo
 
@@ -65,14 +65,14 @@ class DecisionEngine:
                 return
                 
             logger.info(f"{symbol}: Decision BUY. Reason: {signal.reason}. Executing...")
-            self.broker.submit_order(symbol, OrderSide.BUY, OrderType.MARKET, quantity)
+            self.broker.submit_order(symbol, OrderSide.BUY, OrderType.MARKET, quantity, reason="📈 Estrategia (Compra)")
             self.risk_manager.register_entry(symbol, price)
             
         elif signal.signal == -1:
             if symbol in positions and positions[symbol] > 0:
                 quantity = positions[symbol]
                 logger.info(f"{symbol}: Decision SELL (Close Position). Reason: {signal.reason}. Executing...")
-                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, quantity)
+                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, quantity, reason="📉 Estrategia (Venta)")
                 self.risk_manager.clear_entry(symbol)
             else:
                 logger.debug(f"{symbol}: SELL signal ignored (no open position).")

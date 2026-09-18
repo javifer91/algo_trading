@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v11"
+APP_VERSION = "v12"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
@@ -238,6 +238,7 @@ if broker.orders:
             "ID": oid[:8],
             "Símbolo": details["symbol"],
             "Lado": LADO_ES.get(lado_raw, lado_raw.upper()),
+            "Motivo": details.get("reason", "-"),
             "Estado": ESTADO_ES.get(estado_raw, estado_raw.upper()),
             "Cantidad": details["quantity"],
             "Precio Ejec.": details.get("execution_price", "-"),

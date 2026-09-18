@@ -31,7 +31,7 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def submit_order(self, symbol: str, side: OrderSide, type: OrderType, quantity: float, price: Optional[float] = None) -> str:
+    def submit_order(self, symbol: str, side: OrderSide, type: OrderType, quantity: float, price: Optional[float] = None, reason: str = "") -> str:
         """Submits an order and returns an order ID."""
         pass
 
