@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v8"
+APP_VERSION = "v9"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")

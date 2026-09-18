@@ -21,8 +21,8 @@ class RiskManager:
         self.entry_prices: Dict[str, float] = {}
 
         # Parámetros de riesgo (desde settings)
-        self.stop_loss_pct: float = 0.03           # Stop-loss por posición: -3%
-        self.take_profit_pct: float = 0.02         # Take-profit por posición: +2%
+        self.stop_loss_pct: float = 0.015          # Stop-loss por posición: -1.5%
+        self.take_profit_pct: float = 0.030        # Take-profit por posición: +3.0%
         self.max_drawdown_pct: float = settings.max_drawdown_percent       # -25% desde el pico
         self.max_daily_loss_pct: float = settings.max_daily_loss_percent   # -5% en el día
 
