@@ -27,19 +27,30 @@ class DecisionEngine:
         self.data_provider = data_provider
 
     def evaluate_and_execute(self, symbol: str):
+        price = self.data_provider.get_current_price(symbol)
+        positions = self.broker.get_positions()
+        
+        # 1. Chequeo de Emergencia: Stop-Loss
+        if symbol in positions and positions[symbol] > 0:
+            if self.risk_manager.should_stop_loss(symbol, price):
+                logger.info(f"{symbol}: Stop-Loss Triggered! Selling position.")
+                self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, positions[symbol])
+                self.risk_manager.clear_entry(symbol)
+                return  # Si vendemos por stop-loss, no evaluamos nuevas entradas
+
+        # 2. Evaluación de estrategia normal
         signal: SignalType = self.signal_engine.evaluate(symbol, self.data_provider)
         
         if signal.signal == 0:
             logger.debug(f"{symbol}: HOLD. Reason: {signal.reason}")
             return
             
-        price = self.data_provider.get_current_price(symbol)
-        
         if signal.signal == 1:
             quantity = self.risk_manager.calculate_position_size(symbol, price, signal.confidence)
             target_investment = quantity * price
             
-            if not self.risk_manager.check_trade_allowed():
+            # Pasamos un dict temporal con el precio actual para que RiskManager evalúe el drawdown real
+            if not self.risk_manager.check_trade_allowed({symbol: price}):
                 logger.warning(f"{symbol}: Risk limits exceeded. Trade blocked.")
                 return
                 
@@ -49,14 +60,14 @@ class DecisionEngine:
                 
             logger.info(f"{symbol}: Decision BUY. Reason: {signal.reason}. Executing...")
             self.broker.submit_order(symbol, OrderSide.BUY, OrderType.MARKET, quantity)
+            self.risk_manager.register_entry(symbol, price)
             
         elif signal.signal == -1:
-            # We are not allowing short selling by default (ENABLE_SHORT=false)
-            # So a SELL signal is only for closing existing positions
-            positions = self.broker.get_positions()
             if symbol in positions and positions[symbol] > 0:
                 quantity = positions[symbol]
                 logger.info(f"{symbol}: Decision SELL (Close Position). Reason: {signal.reason}. Executing...")
                 self.broker.submit_order(symbol, OrderSide.SELL, OrderType.MARKET, quantity)
+                self.risk_manager.clear_entry(symbol)
             else:
                 logger.debug(f"{symbol}: SELL signal ignored (no open position).")
+

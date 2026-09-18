@@ -11,7 +11,7 @@ from core.config import settings
 from broker.paper import PaperBroker
 from data.yfinance_provider import YFinanceDataProvider
 from strategies.base import SignalEngine
-from strategies.momentum import SimpleMomentumStrategy
+from strategies.momentum import MultiIndicatorStrategy
 from portfolio.risk import RiskManager
 from engine.filter import TradeViabilityFilter
 from engine.decision import DecisionEngine
@@ -19,18 +19,40 @@ from engine.decision import DecisionEngine
 st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", page_icon="📈")
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
-SYMBOL = "BTC-USD"
+# --- SELECCIÓN DE ACTIVO ---
+st.sidebar.header("Configuración de Activo")
+selected_option = st.sidebar.radio(
+    "Selecciona en qué invertir:",
+    [
+        "SPY (S&P 500 - Horario Bolsa EE.UU.)", 
+        "ETH-USD (Ethereum - 24/7)", 
+        "DOGE-USD (Dogecoin Meme - 24/7)"
+    ]
+)
+
+SYMBOL_MAP = {
+    "SPY (S&P 500 - Horario Bolsa EE.UU.)": "SPY",
+    "ETH-USD (Ethereum - 24/7)": "ETH-USD",
+    "DOGE-USD (Dogecoin Meme - 24/7)": "DOGE-USD"
+}
+SYMBOL = SYMBOL_MAP[selected_option]
+
+# Reiniciar estado si se cambia de activo
+if "current_symbol" not in st.session_state or st.session_state.current_symbol != SYMBOL:
+    st.session_state.current_symbol = SYMBOL
+    st.session_state.engine_initialized = False
+    st.session_state.is_running = False
 
 # --- INICIALIZACIÓN DEL ESTADO ---
-if "engine_initialized" not in st.session_state:
+if not st.session_state.get("engine_initialized", False):
     # 1. Configurar Proveedor de Datos Reales (YFinance)
     st.session_state.data_provider = YFinanceDataProvider()
     
-    # Descargar datos históricos reales una sola vez para no saturar la API
+    # Descargar datos históricos reales en temporalidad de 1 minuto para mayor agilidad
     end_time = datetime.now()
-    start_time = end_time - pd.Timedelta(days=100)
+    start_time = end_time - pd.Timedelta(days=5)
     try:
-        df_real = st.session_state.data_provider.get_historical_data(SYMBOL, start_time, end_time, "1d")
+        df_real = st.session_state.data_provider.get_historical_data(SYMBOL, start_time, end_time, "1m")
     except Exception as e:
         st.error(f"Error cargando datos de YFinance: {e}")
         st.stop()
@@ -45,9 +67,9 @@ if "engine_initialized" not in st.session_state:
     # 2. Configurar Broker, Riesgo, Filtros
     st.session_state.broker = PaperBroker(settings.initial_capital, st.session_state.data_provider)
     
-    # Usaremos ventanas cortas para que sea más sensible
-    momentum = SimpleMomentumStrategy(short_window=3, long_window=10)
-    st.session_state.strategy = SignalEngine([momentum])  # DecisionEngine requiere un SignalEngine
+    # Estrategia Multi-Indicador (RSI, MACD, Vol)
+    multi_strategy = MultiIndicatorStrategy()
+    st.session_state.strategy = SignalEngine([multi_strategy])
     st.session_state.risk = RiskManager(st.session_state.broker)
     
     # Comisiones en 0 para que cualquier mínima ganancia esperada pase el filtro y veamos acción
@@ -63,12 +85,14 @@ if "engine_initialized" not in st.session_state:
     )
     
     st.session_state.portfolio_history = [{"Fecha": datetime.now(), "Valor": settings.initial_capital}]
+    st.session_state.confidence_history = []  # historial de confianza por tick
     st.session_state.is_running = False
     st.session_state.engine_initialized = True
 
 # --- INTERFAZ LATERAL ---
+st.sidebar.markdown("---")
 st.sidebar.header("Control de Simulación")
-if st.sidebar.button("▶️ Iniciar / Pausar"):
+if st.sidebar.button("▶️ Iniciar / ⏸️ Pausar"):
     st.session_state.is_running = not st.session_state.is_running
 
 st.sidebar.write(f"**Estado:** {'Corriendo 🟢' if st.session_state.is_running else 'Pausado 🔴'}")
@@ -87,13 +111,29 @@ if st.session_state.is_running:
         new_row = pd.DataFrame({'close': [current_price]}, index=[new_date])
         st.session_state.real_history = pd.concat([df_hist, new_row])
         
-        # 2. Evaluar y Ejecutar
-        # Como los datos son reales, el algoritmo solo operará si genuinamente
-        # la estrategia matemática dicta que hay que hacerlo.
-        # Quitamos el parche temporal, por lo que puede que tarde en operar.
+        # 2. Evaluar señal directamente para mostrar diagnóstico
+        raw_signal = st.session_state.strategy.evaluate(SYMBOL, st.session_state.data_provider)
+        st.session_state.last_signal = raw_signal
+        
+        # Verificar riesgo
+        risk_ok = st.session_state.risk.check_trade_allowed({SYMBOL: current_price})
+        st.session_state.last_risk_ok = risk_ok
+        
+        # Calcular cantidad y viabilidad si hay señal de compra
+        if raw_signal.signal == 1:
+            qty = st.session_state.risk.calculate_position_size(SYMBOL, current_price, raw_signal.confidence)
+            target_inv = qty * current_price
+            viable = st.session_state.filter.is_viable(SYMBOL, raw_signal.expected_return, target_inv)
+            st.session_state.last_viable = viable
+            st.session_state.last_target_inv = target_inv
+        else:
+            st.session_state.last_viable = None
+            st.session_state.last_target_inv = 0
+        
+        # 3. Ejecutar el motor
         st.session_state.engine.evaluate_and_execute(SYMBOL)
         
-        # 3. Registrar valor del portafolio
+        # 4. Registrar valor del portafolio y confianza
         cash = st.session_state.broker.get_balance()
         positions = st.session_state.broker.get_positions()
         portfolio_value = cash
@@ -104,6 +144,17 @@ if st.session_state.is_running:
             "Fecha": datetime.now(),
             "Valor": portfolio_value
         })
+        # Guardar historial de confianza (últimos 200 ticks)
+        st.session_state.confidence_history.append({
+            "Fecha": datetime.now(),
+            "Confianza %": round(raw_signal.confidence * 100, 1),
+            "Señal": {1: "COMPRA", -1: "VENTA", 0: "HOLD"}.get(raw_signal.signal, "?"),
+            "RSI Score %": round(getattr(raw_signal, "rsi_score", 0), 1),
+            "MACD Score %": round(getattr(raw_signal, "macd_score", 0), 1),
+            "Vol Score %": round(getattr(raw_signal, "vol_score", 0), 1),
+        })
+        if len(st.session_state.confidence_history) > 200:
+            st.session_state.confidence_history = st.session_state.confidence_history[-200:]
     except Exception as e:
         st.error(f"Error en tick de simulación: {e}")
         st.session_state.is_running = False
@@ -128,13 +179,23 @@ total_trades = len(broker.orders)
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Valor del Portafolio", f"{portfolio_value:.2f} {settings.base_currency}", f"{net_profit:.2f} {settings.base_currency}")
 col2.metric(f"Precio Actual {SYMBOL}", f"${current_price:.2f}")
-col3.metric("Operaciones Realizadas", str(total_trades))
 
+# Calcular métricas de riesgo
+current_prices_dict = {SYMBOL: current_price} if current_price else {}
+drawdown = st.session_state.risk.get_drawdown(portfolio_value)
+daily_pnl = st.session_state.risk.get_daily_pnl(portfolio_value)
+
+col3.metric("Drawdown Máximo", f"{drawdown*100:.2f}%", delta_color="inverse")
+col4.metric("P&L Diario", f"{daily_pnl*100:.2f}%")
+
+st.markdown("---")
+col_pos, col_trades = st.columns(2)
 if positions:
     pos_str = ", ".join([f"{qty:.4f} {sym}" for sym, qty in positions.items()])
 else:
     pos_str = "Ninguna"
-col4.metric("Posiciones Abiertas", pos_str)
+col_pos.metric("Posiciones Abiertas", pos_str)
+col_trades.metric("Operaciones Realizadas", str(total_trades))
 
 st.subheader("Curva de Capital del Portafolio")
 if len(st.session_state.portfolio_history) > 0:
@@ -160,7 +221,118 @@ if broker.orders:
         })
     st.dataframe(pd.DataFrame(orders_list).iloc[::-1], use_container_width=True)
 else:
-    st.info("Aún no hay operaciones. El algoritmo está analizando el mercado en tiempo real y operará cuando se cumplan las condiciones.")
+    st.info("Aún no hay operaciones. Revisa el diagnóstico de abajo para ver qué está evaluando el bot.")
+
+# --- EXPLICACIÓN DE CÁLCULO DE CONFIANZA ---
+st.markdown("---")
+st.subheader("📐 ¿Cómo se calcula la Confianza del Algoritmo?")
+
+with st.container(border=True):
+    st.markdown("""
+    La **Confianza (0% a 100%)** del algoritmo no es un número arbitrario. Se calcula combinando la **unanimidad** de las señales con la **intensidad** del movimiento del mercado mediante esta fórmula:
+
+    $$\text{Confianza Total} = (50\% \times \text{Consenso}) + (50\% \times \text{Intensidad Ponderada})$$
+    """)
+
+    col_exp1, col_exp2 = st.columns(2)
+    with col_exp1:
+        st.markdown("""
+        #### 1️⃣ Consenso de Indicadores (50% de la Confianza)
+        Mide cuántos de los 3 indicadores (RSI, MACD y Volumen) concuerdan en la misma dirección:
+        * **3 de 3 coinciden:** Consenso = **100%**
+        * **2 de 3 coinciden:** Consenso = **66.7%**
+        * **1 de 3 coinciden:** Consenso = **33.3%**
+        * **0 coinciden:** Consenso = **0%**
+
+        > **🛡️ Regla de Seguridad:** Se exige un **consenso mínimo de 66.7% (2/3)** para permitir cualquier operación. Si es menor, la señal se fuerza a **HOLD / ESPERA**.
+        """)
+
+    with col_exp2:
+        st.markdown("""
+        #### 2️⃣ Intensidad Ponderada (50% de la Confianza)
+        Mide la convicción individual de cada indicador favorable:
+        * 📈 **RSI (Peso 40%):** Mide la distancia respecto a la zona neutra. Cuanto más cerca del extremo (sobrecompra/sobreventa), mayor es la puntuación (hasta 100%).
+        * 📊 **MACD (Peso 35%):** Mide el tamaño del *gap* entre la línea MACD y su línea de Señal respecto a la volatilidad reciente.
+        * 📉 **Volumen (Peso 25%):** Ratio entre el volumen del tick actual y la media móvil de 20 periodos ($Vol_{actual} / Vol_{media20}$).
+        """)
+
+# --- PANEL DE DIAGNÓSTICO EN TIEMPO REAL ---
+st.subheader("🔎 Diagnóstico del Motor (Tiempo Real)")
+
+if st.session_state.get("last_signal"):
+    sig = st.session_state.last_signal
+    SIGNAL_ICONS = {1: "🟢 COMPRA", -1: "🔴 VENTA", 0: "⏸️ ESPERA (HOLD)"}
+    sig_icon = SIGNAL_ICONS.get(sig.signal, "?")
+
+    # --- Métricas actuales ---
+    dcol1, dcol2, dcol3 = st.columns(3)
+    dcol1.metric("Señal Actual", sig_icon)
+    dcol1.caption(f"**Razón:** {sig.reason}")
+
+    dcol2.metric("Confianza Total", f"{sig.confidence*100:.1f}%")
+    dcol2.metric("Retorno Esp.", f"{sig.expected_return*100:.3f}%")
+
+    risk_ok = st.session_state.get("last_risk_ok", None)
+    viable = st.session_state.get("last_viable", None)
+    target_inv = st.session_state.get("last_target_inv", 0)
+
+    with dcol3:
+        if risk_ok is not None:
+            st.write(f"**Riesgo OK:** {'✅ Sí' if risk_ok else '❌ Bloqueado'}")
+        if viable is not None:
+            st.write(f"**Viable:** {'✅ Sí' if viable else '❌ Bloqueado'}")
+        if target_inv > 0:
+            st.write(f"**Inversión objetivo:** {target_inv:.4f} {settings.base_currency}")
+
+    # --- Barras de intensidad por indicador ---
+    st.markdown("#### Intensidad de cada indicador (ciclo actual)")
+    icol1, icol2, icol3 = st.columns(3)
+    rsi_score = getattr(sig, "rsi_score", None)
+    macd_score = getattr(sig, "macd_score", None)
+    vol_score = getattr(sig, "vol_score", None)
+    rsi_val = getattr(sig, "rsi_val", None)
+    vol_ratio = getattr(sig, "vol_ratio", None)
+
+    with icol1:
+        st.markdown("**RSI (peso 40%)**")
+        if rsi_val is not None:
+            st.caption(f"Valor RSI: {rsi_val:.2f} | Umbral compra: <{sig.__class__.__mro__[0].__init__.__defaults__ and 60}")
+        if rsi_score is not None:
+            st.progress(min(1.0, rsi_score / 100), text=f"{rsi_score:.1f}%")
+
+    with icol2:
+        st.markdown("**MACD (peso 35%)**")
+        macd_v = getattr(sig, "macd_val", None)
+        sig_v = getattr(sig, "signal_val", None)
+        if macd_v is not None and sig_v is not None:
+            st.caption(f"MACD: {macd_v:.4f} | Señal: {sig_v:.4f}")
+        if macd_score is not None:
+            st.progress(min(1.0, macd_score / 100), text=f"{macd_score:.1f}%")
+
+    with icol3:
+        st.markdown("**Volumen (peso 25%)**")
+        if vol_ratio is not None:
+            st.caption(f"Vol actual / media 20: ×{vol_ratio:.2f}")
+        if vol_score is not None:
+            st.progress(min(1.0, vol_score / 100), text=f"{vol_score:.1f}%")
+
+else:
+    st.info("Inicia el bot para ver el diagnóstico en tiempo real.")
+
+# --- HISTORIAL DE CONFIANZA ---
+st.markdown("#### 📈 Historial de Confianza")
+conf_hist = st.session_state.get("confidence_history", [])
+if len(conf_hist) > 1:
+    df_conf = pd.DataFrame(conf_hist).set_index("Fecha")
+    st.line_chart(df_conf[["Confianza %"]], height=180)
+    # Tabla compacta con últimos 10 ticks
+    with st.expander("Ver últimos ticks", expanded=False):
+        st.dataframe(
+            pd.DataFrame(conf_hist[-20:]).iloc[::-1].reset_index(drop=True),
+            use_container_width=True
+        )
+else:
+    st.caption("El historial aparecerá aquí una vez que el bot lleve al menos 2 ciclos corriendo.")
 
 if settings.trading_mode.value == "paper":
     st.info("🟡 Modo activo: SIMULACIÓN (Paper Trading). Ninguna operación usa dinero real.")
