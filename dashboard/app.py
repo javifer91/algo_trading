@@ -20,7 +20,7 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v13"
+APP_VERSION = "v14"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
@@ -205,7 +205,14 @@ except:
     pass
 
 for sym, qty in positions.items():
-    portfolio_value += qty * current_price
+    if qty > 0:
+        # PnL no realizado
+        avg_entry = broker.avg_entry.get(sym, current_price)
+        unrealized_pnl = (current_price - avg_entry) * qty
+        # Margen retenido
+        margin = broker.margins.get(sym, 0.0)
+        # Sumar margen devuelto + beneficios
+        portfolio_value += margin + unrealized_pnl
 
 net_profit = portfolio_value - settings.initial_capital
 total_trades = len(broker.orders)

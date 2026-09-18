@@ -37,7 +37,10 @@ class RiskManager:
         if current_prices:
             for sym, qty in positions.items():
                 price = current_prices.get(sym, 0.0)
-                value += qty * price
+                avg_entry = self.broker.avg_entry.get(sym, price)
+                unrealized_pnl = (price - avg_entry) * qty
+                margin = self.broker.margins.get(sym, 0.0)
+                value += margin + unrealized_pnl
         return value
 
     def _update_peak_and_daily(self, portfolio_value: float):
