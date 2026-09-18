@@ -20,23 +20,27 @@ st.set_page_config(page_title="Panel de AlgoTrading en Vivo", layout="wide", pag
 st.title("📈 Panel de AlgoTrading (Datos Reales)")
 
 # Versión de la app: actualizar cuando cambia la lógica del motor para forzar reinicio
-APP_VERSION = "v6"
+APP_VERSION = "v8"
 
 # --- SELECCIÓN DE ACTIVO ---
 st.sidebar.header("Configuración de Activo")
 selected_option = st.sidebar.radio(
     "Selecciona en qué invertir:",
     [
-        "SPY (S&P 500 - Horario Bolsa EE.UU.)", 
-        "ETH-USD (Ethereum - 24/7)", 
-        "DOGE-USD (Dogecoin Meme - 24/7)"
+        "SPY (S&P 500 - Horario Bolsa EE.UU.)",
+        "ETH-USD (Ethereum - 24/7)",
+        "DOGE-USD (Dogecoin Meme - 24/7)",
+        "GC=F (Oro - Futuros 23h/día)",
+        "BZ=F (Petróleo Brent - Futuros 23h/día)",
     ]
 )
 
 SYMBOL_MAP = {
     "SPY (S&P 500 - Horario Bolsa EE.UU.)": "SPY",
     "ETH-USD (Ethereum - 24/7)": "ETH-USD",
-    "DOGE-USD (Dogecoin Meme - 24/7)": "DOGE-USD"
+    "DOGE-USD (Dogecoin Meme - 24/7)": "DOGE-USD",
+    "GC=F (Oro - Futuros 23h/día)": "GC=F",
+    "BZ=F (Petróleo Brent - Futuros 23h/día)": "BZ=F",
 }
 SYMBOL = SYMBOL_MAP[selected_option]
 
@@ -251,7 +255,7 @@ with st.container(border=True):
     st.markdown("""
     La **Confianza (0% a 100%)** del algoritmo no es un número arbitrario. Se calcula combinando la **unanimidad** de las señales con la **intensidad** del movimiento del mercado mediante esta fórmula:
 
-    $$\text{Confianza Total} = (50\% \times \text{Consenso}) + (50\% \times \text{Intensidad Ponderada})$$
+    $$\\text{Confianza Total} = (50\\% \\times \\text{Consenso}) + (50\\% \\times \\text{Intensidad Ponderada})$$
     """)
 
     col_exp1, col_exp2 = st.columns(2)
